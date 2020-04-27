@@ -42,7 +42,7 @@ class Generator(nn.Module):
             z, [self.z_dim_chunk] * self.num_chunk, dim=1)
         # class embedding
         onehot_class = torch.zeros([bs, 1000]).cuda().scatter(
-            1, label.view(-1, 1), 1)
+            1, label.view(-1, 1).to(torch.int64), 1)
         embed = self.embedding(onehot_class)
         cond1 = torch.cat([embed, zs[1]], dim=1)
         cond2 = torch.cat([embed, zs[2]], dim=1)

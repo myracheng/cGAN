@@ -1,6 +1,6 @@
 import torch.nn as nn
 from torch.nn.utils.spectral_norm import spectral_norm as sn
-
+import torch
 from architecture.self_attention import NonLocal
 from architecture.init_weight import init_func
 
@@ -45,7 +45,7 @@ class Discriminator(nn.Module):
         out = self.body(out)
         out = out.view(-1, 4 * nf)
         fc = self.linear(out).squeeze(1)
-        embed = self.embed(class_id)
+        embed = self.embed(class_id.to(torch.int64))
         prod = (out * embed).sum(1)
         return (fc + prod) * out_scale
 

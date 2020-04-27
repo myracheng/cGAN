@@ -7,7 +7,7 @@ import argparse
 from tqdm import tqdm
 import os
 import sys
-
+from PIL import Image
 from fromage import Fromage
 from architecture.generator import Generator
 from architecture.discriminator import Discriminator
@@ -37,7 +37,7 @@ torch.manual_seed(args.seed)
 np.random.seed(args.seed)
 
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
-
+print(device)
 #########################################
 #### Prepare data #######################
 #########################################
@@ -49,14 +49,14 @@ transform = transforms.Compose(
      transforms.ToTensor(),
      transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))]) # normalizes pixels to be in range (-1,1)
 
-trainset = torchvision.datasets.CIFAR10(root='./data', train=True, download=True, transform=transform)
-trainloader = torch.utils.data.DataLoader(trainset, batch_size=args.bsz, shuffle=True, num_workers=8)
+#trainset = torchvision.datasets.CIFAR10(root='./data', train=True, download=True, transform=transform)
+#trainloader = torch.utils.data.DataLoader(trainset, batch_size=args.bsz, shuffle=True, num_workers=8)
 
-trainsubset = torch.utils.data.Subset(trainset, range(0,10000)) # for purposes of FID calculation
-trainsubloader = torch.utils.data.DataLoader(trainsubset, batch_size=args.bsz, shuffle=True, num_workers=8)
+#trainsubset = torch.utils.data.Subset(trainset, range(0,10000)) # for purposes of FID calculation
+#trainsubloader = torch.utils.data.DataLoader(trainsubset, batch_size=args.bsz, shuffle=True, num_workers=8)
 
-testset = torchvision.datasets.CIFAR10(root='./data', train=False, download=True, transform=transform)
-testloader = torch.utils.data.DataLoader(testset, batch_size=args.bsz, shuffle=False, num_workers=8)
+#testset = torchvision.datasets.CIFAR10(root='./data', train=False, download=True, transform=transform)
+#testloader = torch.utils.data.DataLoader(testset, batch_size=args.bsz, shuffle=False, num_workers=8)
 
 if not os.path.exists('samples/train'): os.mkdir('samples/train')
 if not os.path.exists('samples/test'): os.mkdir('samples/test')
@@ -66,7 +66,7 @@ print("\n==> Saving images for FID calculation...\n")
 
 def save_loader(loader, dir, net=None):
     count = 0
-    label_dist = np.zeros(10)
+    label_dist = np.zeros(2)
     for it, (data, label) in enumerate(tqdm(loader)):
         if net is None:
             images = data
@@ -76,15 +76,40 @@ def save_loader(loader, dir, net=None):
         for idx in range(images.size(0)):
             fname = os.path.join('samples', dir, f'image_{count}.png')
             torchvision.utils.save_image(images[idx, :, :, :], fname, normalize=True)
-            label_dist[label[idx]]+=1
+            label_dist[int(label[idx])]+=1
             count += 1
     return label_dist
 
 def evaluate_fid(paths):
-    return calculate_fid_given_paths(paths, batch_size=args.bsz, cuda=(device=='cuda'), dims=2048)
+    return 0
+    #    return calculate_fid_given_paths(paths, batch_size=args.bsz, cuda=(device=='cuda'), dims=2048)
 
+
+fs = [0.5,1,1.5,2,4]
+f_dict = {}
+for i,f in enumerate(fs):
+      f_dict[f] = np.load('../f%s.npy'%str(f))
+        
+datasets = {}
+# print(np.shape(stacked))
+fs = [0.5, 2]
+for i,f in enumerate(fs):
+      temp_list = [0]*5000
+      for j,r in enumerate(f_dict[f]):
+            stacked = np.dstack((r,r,r))
+            img = transform(Image.fromarray(stacked, 'RGB'))
+            temp_list[j] = img
+      datasets[f] = torch.stack(temp_list, dim=0)
+
+trainX = torch.cat((datasets[2], datasets[0.5]), 0)
+ones = np.ones(len(temp_list))
+zeros = np.zeros(len(temp_list))
+y = torch.from_numpy(np.expand_dims(np.concatenate((ones,zeros)),-1))
+train = torch.utils.data.TensorDataset(trainX, y.view(-1))
+trainloader = torch.utils.data.DataLoader(train, batch_size=args.bsz, shuffle=True, num_workers=8)
+testloader = torch.utils.data.DataLoader(train, batch_size=args.bsz, shuffle=False, num_workers=8)
 print(f"Saving train images to samples/train.")
-label_dist = save_loader(trainsubloader, 'train')
+label_dist = save_loader(trainloader, 'train')
 print(f"Label distribution is: {label_dist}\n")
 
 print(f"Saving test images to samples/test.")
@@ -159,7 +184,7 @@ def test():
     netG.eval()
 
     print("Evaluating train--fake FID...")
-    save_loader(trainsubloader, 'fake', net=netG)
+    save_loader(trainloader, 'fake', net=netG)
     train_fid = evaluate_fid(paths=['samples/train','samples/fake'])
     print(f"Train--fake FID is: {train_fid}\n")
 
@@ -174,7 +199,7 @@ def test():
 
 # Fix a latent z for visualisation during training.
 z = torch.randn(10*10, 20*4, device=device)
-label = torch.remainder(torch.arange(100, device=device),10)
+label = torch.remainder(torch.arange(100, device=device),2)
 
 for epoch in range(0, args.epochs):
     print(f"\n==> Epoch {epoch} \n")
